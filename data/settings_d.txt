@@ -1,0 +1,1 @@
+{"ap_password":"NCDBeast","ap_ssid":"","report_interval":5000,"sensor_type":600, "buffer":0}
