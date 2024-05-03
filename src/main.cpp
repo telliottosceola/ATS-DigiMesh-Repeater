@@ -33,6 +33,11 @@ void setup() {
 }
 
 void loop() {
+
+  if(millis() > 4294967294-settings.reportInterval){
+    lastTransmit = 0;
+    return;
+  }
   if(previousSetupMode != setupMode){
     previousSetupMode = setupMode;
     #ifdef DEBUG
@@ -59,11 +64,45 @@ void loop() {
     }
   }
 
-  module.loop();
-  if(lastTransmit == 0 || millis() > lastTransmit+settings.reportInterval){
-    module.transmit(broadcastAddress, repeaterPacket, 9);
+  
+  if(sensorPacketReceived){
+    if(transmitCount >= 255){
+      transmitCount = 0;
+    }
+    sensorPacket[5] = transmitCount++;
+    uint8_t checkSum = 0x00;
+    for(int i = 0; i < sizeof(sensorPacket)-1; i++){
+      checkSum+=sensorPacket[i];
+    }
+    checkSum = checkSum & 0xFF;
+    sensorPacket[14] = checkSum;
+    delay(100);
+    module.transmit(broadcastAddress, sensorPacket, sizeof(sensorPacket));
+    sensorPacketReceived = false;
     lastTransmit = millis();
   }
+  else if(lastTransmit == 0 || millis() > lastTransmit+settings.reportInterval){
+    if(transmitCount >= 255){
+      transmitCount = 0;
+    }
+    repeaterPacket[5] = transmitCount++;
+    repeaterPacket[9] = 0x00;
+    repeaterPacket[10] = 0x00;
+    repeaterPacket[11] = 0x00;
+    repeaterPacket[12] = 0x00;
+    repeaterPacket[13] = 0x00;
+
+    uint8_t checkSum = 0x00;
+    for(int i = 0; i < sizeof(repeaterPacket)-1; i++){
+      checkSum+=repeaterPacket[i];
+    }
+    checkSum = checkSum & 0xFF;
+    repeaterPacket[14] = checkSum;
+
+    module.transmit(broadcastAddress, repeaterPacket, sizeof(repeaterPacket));
+    lastTransmit = millis();
+  }
+  module.loop();
 }
 
 void buttonPressCallback(unsigned long duration){
@@ -112,15 +151,6 @@ void backgroundTasks(void* pvParameters){
 }
 
 void s3BReceiver(uint8_t* data, size_t len, uint8_t* transmitterAddress){
-  // Serial.print("received data from address: ");
-  // for(int i = 0; i < 8; i++){
-  //   Serial.printf("%02x:", transmitterAddress[i]);
-  // }
-  // Serial.print(" Data: ");
-  // for(int i = 0; i < len; i++){
-  //   Serial.printf("%02x, ",data[i]);
-  // }
-  // Serial.println();
 
   char topic[25];
   sprintf(topic, "SN%02X%02X%02X%02X%02X%02X%02X%02X", transmitterAddress[0], transmitterAddress[1], transmitterAddress[2], transmitterAddress[3], transmitterAddress[4], transmitterAddress[5], transmitterAddress[6], transmitterAddress[7]);
@@ -209,7 +239,7 @@ void s3BReceiver(uint8_t* data, size_t len, uint8_t* transmitterAddress){
 }
 
 void s3BTransmitStatus(uint8_t status, uint8_t frameID){
-  // Serial.printf("Transmit Status: %i\n",status);
+  Serial.printf("Transmit Status: %i\n",status);
 }
 
 void softwareS3BCommand(){
@@ -221,9 +251,18 @@ void softwareATCommandResponse(uint8_t* data, size_t len){
 }
 
 void moduleSettingsLoaded(){
-
+  Serial.println("Module Settings Loaded");
 }
 
 void s3BRSSI(int rssi, uint8_t* transmitterAddress){
+  Serial.printf("RSSI: %i, address:%02X:%02X:%02X:%02X:%02X:%02X:%02X:%02X\n",rssi,transmitterAddress[0],transmitterAddress[1],transmitterAddress[2],transmitterAddress[3],transmitterAddress[4],transmitterAddress[5],transmitterAddress[6],transmitterAddress[7]);
+  uint8_t sensorPacketPlaceHolder[5];
+  sensorPacketPlaceHolder[0] = transmitterAddress[4];
+  sensorPacketPlaceHolder[1] = transmitterAddress[5];
+  sensorPacketPlaceHolder[2] = transmitterAddress[6];
+  sensorPacketPlaceHolder[3] = transmitterAddress[7];
+  sensorPacketPlaceHolder[4] = rssi;
 
+  memcpy(sensorPacket+9, sensorPacketPlaceHolder, 5);
+  sensorPacketReceived = true;
 }
